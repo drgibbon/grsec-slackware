@@ -1,0 +1,297 @@
+#!/bin/sh
+
+# Slackware build script for a grsecurity-patched kernel
+
+# Copyright 2016 David O'Shaughnessy
+# All rights reserved.
+#
+# Redistribution and use of this script, with or without modification, is
+# permitted provided that the following conditions are met:
+#
+# 1. Redistributions of this script must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR IMPLIED
+#  WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+#  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+#  EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+#  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+#  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+#  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+#  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+#  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+#  ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# exit on errors
+trap 'exit' ERR
+
+# check for regular user (the slackpkg will be created with fakeroot)
+if [ "$EUID" -ne 0 ]; then
+    command -v fakeroot >/dev/null 2>&1 || { echo -e >&2 "${RED}fakeroot required (available on SBo). Exiting.${NC}"; exit 1; }
+else
+    echo -e "${RED}No need for superuser. Exiting.${NC}"
+    exit 1
+fi
+
+# some colours for script output to make it easier to follow
+RED='\e[1;31m'
+GREEN='\e[1;32m'
+CYAN='\e[1;36m'
+NC='\033[0m' # reset/no colour
+
+# BUILD VERSIONS
+# edit these manually to change build versions
+# but the script can set them automatically at runtime anyway
+GVERSION=${GVERSION:-3.1}
+KVERSION=${KVERSION:-4.7.10}
+GDATE=${GDATE:-201610262029}
+# or just set them automatically
+if (whiptail --title "grsec/kernel versions" --yesno "Automatically set the correct versions for kernel and patch from grsecurity.net?" 8 55); then
+    # get the rss feed
+    echo -e "${CYAN}Checking RSS feed${NC}\n"
+    wget -O rss "https://grsecurity.net/testing_rss.php"
+    sleep 1
+    # search for first hit of a grsec release (i.e. the latest)
+    RESULT=$(grep -m 1 -o 'grsecurity-.*\.patch' rss)
+    # remove suffix
+    RESULT=${RESULT%".patch"}
+    # and prefix
+    RESULT=${RESULT#"grsecurity-"}
+    # use awk to get the version parts
+    echo $RESULT > grversion
+    GVERSION=$(awk 'BEGIN {FS="-";} // {print $1;}' grversion)
+    KVERSION=$(awk 'BEGIN {FS="-";} // {print $2;}' grversion)
+    GDATE=$(awk 'BEGIN {FS="-";} // {print $3;}' grversion)
+    rm grversion rss
+fi
+# change this to whatever you like
+# defaults to _username
+TAG="_$(id -un)"
+
+##
+# editing these will probably break stuff
+##
+PKGNAME=kernel-grsec
+PVERSION=$KVERSION-$GVERSION
+GRELEASE=grsecurity-$GVERSION-$KVERSION-$GDATE
+KRELEASE=linux-$KVERSION
+CVERSION=config-$KVERSION-grsec-$GVERSION
+# create download links
+K_LINK=https://cdn.kernel.org/pub/linux/kernel/v${KVERSION:0:1}.x/$KRELEASE.tar.xz
+KS_LINK=https://cdn.kernel.org/pub/linux/kernel/v${KVERSION:0:1}.x/$KRELEASE.tar.sign
+G_LINK=https://grsecurity.net/test/$GRELEASE.patch
+GS_LINK=https://grsecurity.net/test/$GRELEASE.patch.sig
+# number of jobs (when compiling the kernel)
+NCPUS=$(nproc)
+if [ $NCPUS -eq 1 ]; then
+    NJOBS=1
+else
+    if (whiptail --title "Kernel compile" --yesno "Build speed (make -j):\n\nSet jobs equal to number of CPU cores? ('No' for half)" 10 55); then
+	NJOBS=$(nproc)
+    else
+	NJOBS=$((NCPUS / 2))
+    fi
+fi
+
+# directories for building and output
+CWD=$(pwd) # source downloaded here (where the SlackBuild is)
+TMP=${TMP:-/tmp/grsec} # source extracted here
+PKG=$TMP/package-$PKGNAME # package created here
+OUTPUT=${OUTPUT:-/tmp} # created slackpkg will be here
+
+# confirm what will happpen
+whiptail --title "Slackware kernel-grsec build" --msgbox "This script will;\n\n1) Download $KRELEASE.tar.xz and $GRELEASE.patch to the current directory.\n2) Download and check the signatures.\n3) Extract the kernel source to $TMP/$KRELEASE, patch it, apply $CVERSION (if found), and build.\n4) Output a single slackpkg in $OUTPUT (using fakeroot) containing the kernel, modules, and source.\n\nThe package will not be installed." 17 78
+
+## CHECK AND PREPARE KERNEL SOURCE
+echo -e "\n[ Check for necessary files ]\n"
+# check for compressed kernel (and uncompress)
+if [ -a $KRELEASE.tar.xz ]; then
+    echo -e "${CYAN}Uncompressing kernel${NC}"
+    unxz $KRELEASE.tar.xz
+fi
+
+# check for signed kernel archive
+if test -f $KRELEASE.tar; then
+    # it is there and we can continue
+    echo -e "${CYAN}Found $KRELEASE kernel source${NC}"
+else
+    # no archive found
+    echo -e "${CYAN}Couldn't find kernel source, downloading${NC}"
+    sleep 2
+    # download the source
+    wget -c $K_LINK
+    # extract
+    unxz $KRELEASE.tar.xz
+fi
+
+# check for the kernel sig
+if [ -a $KRELEASE.tar.sign ]; then
+    echo -e "${CYAN}Found $KRELEASE signature${NC}"
+else
+    echo -e "${CYAN}No $KRELEASE signature found, downloading${NC}"
+    sleep 2
+    wget -nv -c $KS_LINK
+fi
+
+## CHECK AND PREPARE GRSEC PATCH
+# check for grsec patch
+if test -f $GRELEASE.patch; then
+    # it is there and we can continue
+    echo -e "${CYAN}Found $GRELEASE patch${NC}"
+else
+    # no archive found
+    echo -e "${CYAN}Couldn't find grsec patch, downloading${NC}"
+    sleep 2
+    # download the source
+    wget -c $G_LINK
+fi
+# check for grsec signature
+if test -f $GRELEASE.patch.sig; then
+    # it is there and we can continue
+    echo -e "${CYAN}Found $GRELEASE signature${NC}"
+else
+    # no archive found
+    echo -e "${CYAN}Couldn't find grsec signature, downloading${NC}"
+    sleep 2
+    # download the source
+    wget -nv -c $GS_LINK
+fi
+
+## CHECK FOR KERNEL CONFIG
+if [ -a /boot/$CVERSION ]; then
+    # use that
+    echo -e "${CYAN}Found kernel config in /boot${NC}"
+elif [ -a $CVERSION ]; then
+    echo -e "${CYAN}Found kernel config in $CWD${NC}"
+else
+    echo -e "${RED}Couldn't find kernel config${NC}"
+    sleep 1
+    whiptail --title "No kernel config" --msgbox "Couldn't find a kernel config file. You can continue without one, but you'll have to configure the entire kernel manually.\n\nEasier is to place a config file in the current directory and name it config-$KVERSION-grsec-$GVERSION" 12 55
+fi
+
+## CHECK SIGNATURES
+echo -e "\n[ Check signatures ]\n"
+# kernel sig validity
+echo -e "${CYAN}Checking kernel signature${NC}"
+if gpg2 --verify $KRELEASE.tar.sign; then
+    echo -e "${GREEN}Good kernel signature${NC}"
+else
+    echo -e "${RED}Bad signature. Exiting${NC}"
+    exit 1
+fi
+# grsec sig validity
+echo -e "\n${CYAN}Checking grsec signature${NC}"
+sleep 3
+if gpg2 --verify $GRELEASE.patch.sig; then
+    echo -e "${GREEN}Good grsec signature${NC}"
+    sleep 3
+else
+    echo -e "${RED}Bad signature. Exiting${NC}"
+    exit 1
+fi
+
+# delete any old source
+rm -fr $TMP
+# and create the package directory
+mkdir -p $PKG
+
+## CONFIGURE KERNEL
+echo -e "\n[ Configure and build kernel ]\n"
+
+# move to new working directory
+cd $TMP
+# extract kernel source
+echo -e "${CYAN}Extracting kernel source${NC}"
+sleep 3
+tar xvf $CWD/$KRELEASE.tar
+cd $KRELEASE
+# apply the grsec patch
+echo -e "\n${CYAN}Applying grsec patch${NC}"
+sleep 3
+patch -p1 < $CWD/$GRELEASE.patch
+
+# search for and copy the kernel .config
+if [ -a /boot/$CVERSION ]; then
+    # config in /boot
+    cp -a /boot/$CVERSION $TMP/$KRELEASE/.config
+    echo -e "\n${CYAN}Copied /boot/$CVERSION\n${NC}"
+elif [ -a $CWD/$CVERSION ]; then
+    # config in $CWD
+    cp -a $CWD/$CVERSION $TMP/$KRELEASE/.config
+    echo -e "\n${CYAN}Copied $CWD/$CVERSION\n${NC}"
+else
+    # no config
+    echo -e "\n${CYAN}No config${NC}"
+fi
+# configure kernel
+# oldconfig in case of something in /boot
+echo -e "${CYAN}make oldconfig${NC}"
+make oldconfig
+echo -e "${CYAN}make menuconfig${NC}"
+make menuconfig
+
+# check if the user is ready to build the kernel (or wants to
+# reconfigure it first)
+LOOP=1
+until [ $LOOP -eq 0 ]; do
+    if whiptail --title "Compile" --yesno "Ready to compile the kernel? (No to reconfigure)\n\n(Make sure you have set up 'Security Options -> Grsecurity' appropriately for your machine)" 10 60; then
+	# user selected "Yes" so exit loop
+	LOOP=0
+    else
+	# stay in loop, make menuconfig again
+	echo -e "${CYAN}make menuconfig${NC}"
+	make menuconfig
+    fi
+done
+
+# ready to roll, build the kernel
+echo -e "${CYAN}Building kernel and modules${NC}"
+sleep 3
+make -j$NJOBS bzImage modules
+
+# now make the modules
+make INSTALL_MOD_PATH=$PKG modules_install
+
+echo -e "\n${GREEN}Kernel compiled${NC}"
+echo -e "\n[ Create package ]\n"
+echo -e "${CYAN}Preparing source and package${NC}"
+sleep 3
+
+# get the local version for kernel (not really neccesary though since
+# grsec adds -grsec anyway, but just in case it has been set)
+KLOCAL=$(awk 'BEGIN {FS="=";} /^CONFIG_LOCALVERSION=/ {gsub("\"","",$2); print $2;}' ./.config)
+# move the firmware so that it doesn't clobber the Slackware originals
+mv $PKG/lib/firmware $PKG/lib/ftmp
+mkdir -p $PKG/lib/firmware/$KVERSION-grsec$KLOCAL
+mv $PKG/lib/ftmp/* $PKG/lib/firmware/$KVERSION-grsec$KLOCAL
+rm -fr $PKG/lib/ftmp
+
+# then create /boot
+mkdir -p $PKG/boot
+cp -a arch/$(uname -m)/boot/bzImage $PKG/boot/vmlinuz-$KVERSION-grsec-$GVERSION
+cp -a System.map $PKG/boot/System.map-$KVERSION-grsec-$GVERSION
+cp -a .config $PKG/boot/config-$KVERSION-grsec-$GVERSION
+
+# then prepare the source (the same way as Slackware releases)
+make clean
+make prepare
+rm .version
+cd $TMP
+mkdir -p $PKG/usr/src
+cp -a $KRELEASE $PKG/usr/src
+
+# package is ready to be made
+echo -e "\n${CYAN}Creating slackpkg in $OUTPUT${NC}"
+sleep 3
+mkdir -p $PKG/install
+# this doesn't work for some reason
+cat $CWD/slack-desc > $PKG/install/slack-desc
+# build the package
+cd $PKG
+fakeroot /sbin/makepkg -l y -c n $OUTPUT/$PKGNAME-$KVERSION-$GVERSION$TAG.txz
+
+# finished
+echo -e "${GREEN}Done :)\n${NC}"
+echo "NOTES:"
+echo "Make sure the new package won't overwrite anything with 'installpkg --warn'"
+echo -e "After installing, don't forget to make an initrd.gz and update your bootloader.\n"
