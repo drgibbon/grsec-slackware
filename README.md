@@ -1,12 +1,14 @@
 grsec-slackware
 ===============
-This script automatically pulls the latest grsecurity test version,
-with correct kernel version, patches it, and compiles. It then
-packages it for Slackware. For simplicity, RBAC is disabled by
-default, but that can be easily changed. As is, the script won't run
-as root, and you need
+This script automatically pulls the latest grsecurity test version
+with correct kernel version, applies the patch, and compiles. It then
+creates a slackpkg (with kernel, source, modules, and firmware all in
+one). The package should not clobber any Slackware files.
+
+For simplicity, RBAC is disabled by default, but that can be easily
+changed. As is, the script won't run as root, and you need
 [fakeroot](https://slackbuilds.org/repository/14.2/system/fakeroot/)
-installed (you can pass MANPO=no to the fakeroot SlackBuild to avoid
+installed (you can pass `MANPO=no` to the fakeroot SlackBuild to avoid
 the dependencies).
 
 Disclaimer
