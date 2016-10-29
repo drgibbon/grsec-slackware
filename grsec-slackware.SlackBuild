@@ -268,7 +268,7 @@ rm -fr $PKG/lib/ftmp
 
 # then create /boot
 mkdir -p $PKG/boot
-cp -a arch/$(uname -m)/boot/bzImage $PKG/boot/vmlinuz-$KVERSION-grsec-$GVERSION
+cp -a arch/x86/boot/bzImage $PKG/boot/vmlinuz-$KVERSION-grsec-$GVERSION
 cp -a System.map $PKG/boot/System.map-$KVERSION-grsec-$GVERSION
 cp -a .config $PKG/boot/config-$KVERSION-grsec-$GVERSION
 
