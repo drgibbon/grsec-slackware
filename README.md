@@ -12,6 +12,17 @@ installed so the package can be created with proper root permissions
 (you can pass `MANPO=no` to the fakeroot SlackBuild to avoid the
 dependencies).
 
+Usage
+-----
+Just clone the repo and run it.
+```sh
+git clone https://github.com/drgibbon/grsec-slackware.git
+cd grsec-slackware
+./grsec-slackware.SlackBuild
+```
+
+The slackpkg (not installed) will be created in /tmp
+
 Disclaimer
 ----------
 Although I wanted an easy way to test and update grsecurity, I don't
