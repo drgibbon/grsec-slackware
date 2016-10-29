@@ -14,7 +14,7 @@ dependencies).
 
 Usage
 -----
-Just clone the repo and run it.
+Just clone the repo and run it;
 ```sh
 git clone https://github.com/drgibbon/grsec-slackware.git
 cd grsec-slackware
@@ -32,3 +32,7 @@ should know [whether or not you can run grsecurity on your
 system](https://en.wikibooks.org/wiki/Grsecurity). I'm pretty sure
 that this won't work on any system running proprietary graphics
 drivers (unless they're patched first).
+
+The kernel config is based on the Slackware 14.2 release, with all new
+options set to module (if possible) or otherwise the default. I'm sure
+this could be done better.
