@@ -43,8 +43,8 @@ NC='\033[0m' # reset/no colour
 # edit these manually to change build versions
 # but the script can set them automatically at runtime anyway
 GVERSION=${GVERSION:-3.1}
-KVERSION=${KVERSION:-4.7.10}
-GDATE=${GDATE:-201610262029}
+KVERSION=${KVERSION:-4.8.9}
+GDATE=${GDATE:-201611192033}
 # or just set them automatically
 if (whiptail --title "grsec/kernel versions" --yesno "Automatically set the correct versions for kernel and patch from grsecurity.net?" 8 55); then
     # get the rss feed
