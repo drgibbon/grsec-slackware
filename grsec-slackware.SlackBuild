@@ -43,8 +43,8 @@ NC='\033[0m' # reset/no colour
 # edit these manually to change build versions
 # but the script can set them automatically at runtime anyway
 GVERSION=${GVERSION:-3.1}
-KVERSION=${KVERSION:-4.8.9}
-GDATE=${GDATE:-201611192033}
+KVERSION=${KVERSION:-4.8.10}
+GDATE=${GDATE:-201611210813}
 # or just set them automatically
 if (whiptail --title "grsec/kernel versions" --yesno "Automatically set the correct versions for kernel and patch from grsecurity.net?" 8 55); then
     # get the rss feed
@@ -204,6 +204,7 @@ cd $TMP
 echo -e "${CYAN}Extracting kernel source${NC}"
 sleep 3
 tar xvf $CWD/$KRELEASE.tar
+chmod 755 $KRELEASE
 cd $KRELEASE
 # apply the grsec patch
 echo -e "\n${CYAN}Applying grsec patch${NC}"
@@ -251,6 +252,12 @@ make -j$NJOBS bzImage modules
 
 # now make the modules
 make INSTALL_MOD_PATH=$PKG modules_install
+# and fix the build and source links in the /lib/modules
+# (otherwise compiling new kernel modules will fail)
+rm $PKG/lib/modules/4.8.10-grsec/build
+rm $PKG/lib/modules/4.8.10-grsec/source
+ln -s /usr/src/$KRELEASE $PKG/lib/modules/4.8.10-grsec/build
+ln -s /usr/src/$KRELEASE $PKG/lib/modules/4.8.10-grsec/source
 
 echo -e "\n${GREEN}Kernel compiled${NC}"
 echo -e "\n[ Create package ]\n"
