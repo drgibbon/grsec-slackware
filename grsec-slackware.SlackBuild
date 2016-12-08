@@ -254,10 +254,10 @@ make -j$NJOBS bzImage modules
 make INSTALL_MOD_PATH=$PKG modules_install
 # and fix the build and source links in the /lib/modules
 # (otherwise compiling new kernel modules will fail)
-rm $PKG/lib/modules/4.8.10-grsec/build
-rm $PKG/lib/modules/4.8.10-grsec/source
-ln -s /usr/src/$KRELEASE $PKG/lib/modules/4.8.10-grsec/build
-ln -s /usr/src/$KRELEASE $PKG/lib/modules/4.8.10-grsec/source
+rm $PKG/lib/modules/$KVERSION-grsec/build
+rm $PKG/lib/modules/$KVERSION-grsec/source
+ln -s /usr/src/$KRELEASE $PKG/lib/modules/$KVERSION-grsec/build
+ln -s /usr/src/$KRELEASE $PKG/lib/modules/$KVERSION-grsec/source
 
 echo -e "\n${GREEN}Kernel compiled${NC}"
 echo -e "\n[ Create package ]\n"
